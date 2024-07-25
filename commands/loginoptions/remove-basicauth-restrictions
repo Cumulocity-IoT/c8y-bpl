@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -e
+
+help() {
+  script_name=$(basename "$0")
+  cat <<EOF
+----------------------------------------------------------------------------------------------------------
+HELP MESSAGE:
+    Usage: c8y bpl loginoptions $script_name <argument> [c8y-universal-arguments]
+
+    Removes the restriction that client (web browser, command line, etc.) cannot use BasicAuth as Authentication method
+
+    Arguments:
+      -h, --help                Show this help message and exit
+      [any c8y argument]        For example: --timeout 300s; --output json;
+    Example usage:
+    Enable basic auth login and don't prompt for confirmation:
+        c8y bpl loginoptions $script_name --force
+----------------------------------------------------------------------------------------------------------
+EOF
+}
+
+remove_basic_auth_restrictions() {
+  # Note: Don't allow users to provide additional parameters as the output of this command needs to be fixed
+  # as the output is used in a follow up api call
+  idAndProviderName=$(c8y api -n GET "$C8Y_HOST/tenant/loginOptions" --filter "type like BASIC" --select "id,providerName" --output tsv)
+  id=$(echo "$idAndProviderName" | cut -f1)
+  providerName=$(echo "$idAndProviderName" | cut -f2)
+
+  # Print the extracted values individually
+  echo "Notes: The id (should look something like '8caad89a-e1a2-4d28-8d31-ae194d3f1dbb')" >&2
+  echo "ID: $id" >&2
+  echo "Provider Name: $providerName" >&2
+
+  c8y api -n PUT "$C8Y_HOST/tenant/loginOptions/$id" \
+    --template "{
+        type: 'BASIC',
+        providerName: '$providerName',
+        id: '$id',
+        authenticationRestrictions: {
+          forbiddenClients: [],
+        },
+    }" \
+    "$@"
+  echo "Enabled basic authorization successfully"
+  exit 0
+}
+
+# Parse command-line options
+REST_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      help
+      exit 0
+      ;;
+    *)
+      REST_ARGS+=("$1")
+      ;;
+  esac
+  shift
+done
+set -- "${REST_ARGS[@]}" # Get all remain arguments which is not listed in the cases above
+
+# Execute the command
+remove_basic_auth_restrictions "$@"
